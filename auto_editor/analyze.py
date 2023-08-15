@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
+from scipy import interpolate
 
 from auto_editor import version
 from auto_editor.lang.json import Lexer, Parser, dump
@@ -69,12 +70,17 @@ subtitle_builder = pAttrs(
     pAttr("ignore-case", False, is_bool),
     pAttr("max-count", None, orc(is_uint, is_void)),
 )
+vad_builder = pAttrs(
+    "vad",
+    pAttr("stream", 0, is_uint),
+)
 
 builder_map = {
     "audio": audio_builder,
     "motion": motion_builder,
     "pixeldiff": pixeldiff_builder,
     "subtitle": subtitle_builder,
+    "vad": vad_builder,
 }
 
 
@@ -148,6 +154,9 @@ def obj_tag(tag: str, tb: Fraction, obj: dict[str, Any]) -> str:
     key = key[:-1]  # remove unnecessary char
     return key
 
+def resample(x, new_size, kind='linear'):
+    f = interpolate.interp1d(np.linspace(0, 1, x.size), x, kind)
+    return f(np.linspace(0, 1, new_size))
 
 class Levels:
     def __init__(
@@ -308,6 +317,55 @@ class Levels:
 
         self.bar.end()
         return self.cache("audio", {"stream": s}, threshold_list)
+
+    def vad(self, s: int) -> NDArray[np.bool_]:
+        import webrtcvad, scipy
+
+        if s > len(self.src.audios) - 1:
+            raise LevelError(f"audio: audio stream '{s}' does not exist.")
+
+        if (arr := self.read_cache("audio", {"stream": s})) is not None:
+            return arr
+
+        sr, samples = read(
+            self.ensure.audio(f"{self.src.path.resolve()}", self.src.label, s)
+        )
+
+        samp_count = samples.shape[0]
+        samp_per_ticks = sr / self.tb
+        audio_ticks = int(samp_count / samp_per_ticks)
+
+        window_size = 0.03
+        # Window size for merging voice segments
+        window_size_merge = 0.5
+        # Maximum window size for filtering voice segments
+        window_size_max = 0.2
+        frame_len = int(window_size * sr)
+        merge_filter_size = int(window_size_merge * sr / frame_len)
+        max_filter_size = int(window_size_max * sr)
+
+        vad = webrtcvad.Vad(3)
+
+        inflate = lambda voice, channel: np.repeat(voice, frame_len)[:len(channel)]
+
+        channel = samples[ :,0]
+
+        voice = np.array(
+                [vad.is_speech(channel[sample_idx: sample_idx + frame_len].tobytes(), sr)
+                if sample_idx + frame_len <= len(channel) else
+                False for sample_idx in range(0, len(channel), frame_len)])
+
+        # Calculate energy threshold for voice filtering
+        channel_abs = np.abs(channel)
+        energy_threshold = np.quantile(channel_abs[inflate(voice, channel)], 0.9)
+
+        # Apply filtering to the voice segments
+        voice &= (scipy.ndimage.filters.maximum_filter1d(channel_abs, max_filter_size, mode='constant') > energy_threshold)[::frame_len]
+        voice = scipy.ndimage.morphology.binary_closing(voice, np.ones((merge_filter_size,), dtype=np.bool_))
+
+        result = resample(voice, audio_ticks, kind='nearest').astype(np.bool_)
+
+        return result
 
     def subtitle(
         self,
@@ -562,6 +620,8 @@ def edit_method(val: str, filesetup: FileSetup, env: Env) -> NDArray[np.bool_]:
                 obj["ignore_case"],
                 obj["max_count"],
             )
+        if method == "vad":
+            return levels.vad(obj["stream"])
     except LevelError as e:
         if strict:
             log.error(e)

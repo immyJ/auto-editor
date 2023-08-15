@@ -48,7 +48,7 @@ SEC_UNITS = ("s", "sec", "secs", "second", "seconds")
 VAL, QUOTE, SEC, DB, PER, DOT = "VAL", "QUOTE", "SEC", "DB", "PER", "DOT"
 LPAREN, RPAREN, LBRAC, RBRAC, LCUR, RCUR, EOF = "(", ")", "[", "]", "{", "}", "EOF"
 VLIT, HASH_LIT = "VLIT", "HLIT"
-METHODS = ("audio:", "motion:", "pixeldiff:", "subtitle:", "none:", "all/e:")
+METHODS = ("audio:", "motion:", "pixeldiff:", "subtitle:", "vad:", "none:", "all/e:")
 brac_pairs = {LPAREN: RPAREN, LBRAC: RBRAC, LCUR: RCUR}
 
 str_escape = {

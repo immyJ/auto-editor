@@ -54,6 +54,9 @@ Editing Methods:
     - ignore-case bool? : #f
     - max-count (or/c uint? void?) : (void)
 
+ - vad  ; Voice activity detection
+    - stream uint? : 0
+
 Command-line Examples:
   --edit audio
   --edit audio:threshold=4%

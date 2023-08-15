@@ -129,6 +129,8 @@ def main(sys_args: list[str] = sys.argv[1:]) -> None:
                         obj["max_count"],
                     )
                 )
+            elif method == "vad":
+                print_arr(levels.vad(obj["stream"]))
             elif method == "none":
                 print_arr(levels.none())
             elif method == "all/e":
